@@ -89,6 +89,51 @@ def make_background(size) -> Image.Image:
     return Image.fromarray(base, "RGB")
 
 
+def draw_table_occluder(draw: ImageDraw.ImageDraw, canvas_size, center, card_w: int, card_h: int) -> None:
+    """Draw a realistic table object over part of the card after the card is pasted."""
+    cx, cy = center
+    kind = random.choice(["chip", "card_back", "hand_shadow", "rail"])
+    ox = int(cx + random.uniform(-0.35, 0.35) * card_w)
+    oy = int(cy + random.uniform(-0.35, 0.35) * card_h)
+
+    if kind == "chip":
+        radius = random.randint(max(18, card_w // 12), max(28, card_w // 6))
+        fill = random.choice([(230, 230, 225), (35, 35, 38), (180, 30, 40), (40, 70, 170)])
+        outline = random.choice([(245, 245, 245), (20, 20, 20)])
+        draw.ellipse((ox - radius, oy - radius, ox + radius, oy + radius), fill=fill, outline=outline, width=4)
+        inner = int(radius * 0.55)
+        draw.ellipse((ox - inner, oy - inner, ox + inner, oy + inner), outline=outline, width=2)
+    elif kind == "card_back":
+        bw = random.randint(max(55, card_w // 4), max(85, card_w // 2))
+        bh = random.randint(max(75, card_h // 4), max(120, card_h // 2))
+        color = random.choice([(32, 65, 145), (130, 25, 35), (35, 95, 70)])
+        draw.rounded_rectangle((ox - bw // 2, oy - bh // 2, ox + bw // 2, oy + bh // 2), radius=10, fill=color, outline=(235, 235, 235), width=3)
+        draw.rectangle((ox - bw // 3, oy - bh // 3, ox + bw // 3, oy + bh // 3), outline=(235, 235, 235), width=2)
+    elif kind == "hand_shadow":
+        ew = random.randint(max(60, card_w // 4), max(110, card_w // 2))
+        eh = random.randint(max(35, card_h // 8), max(70, card_h // 4))
+        skin = random.choice([(180, 125, 90), (205, 155, 120), (135, 90, 65)])
+        draw.ellipse((ox - ew, oy - eh, ox + ew, oy + eh), fill=skin)
+        for i in range(random.randint(2, 4)):
+            fx = ox + random.randint(-ew, ew // 2)
+            fy = oy + random.randint(-eh, eh)
+            draw.rounded_rectangle((fx, fy - 10, fx + random.randint(50, 95), fy + 12), radius=8, fill=skin)
+    else:
+        rw = random.randint(max(90, card_w // 2), max(180, card_w))
+        rh = random.randint(18, 45)
+        fill = random.choice([(20, 20, 24), (65, 50, 45), (25, 80, 45)])
+        draw.rounded_rectangle((ox - rw // 2, oy - rh // 2, ox + rw // 2, oy + rh // 2), radius=8, fill=fill)
+
+
+def add_occlusions(bg: Image.Image, canvas_size, center, card_w: int, card_h: int, probability: float) -> Image.Image:
+    if random.random() >= probability:
+        return bg
+    draw = ImageDraw.Draw(bg)
+    for _ in range(random.randint(1, 3)):
+        draw_table_occluder(draw, canvas_size, center, card_w, card_h)
+    return bg
+
+
 def rotated_corners(cx, cy, w, h, angle_deg):
     angle = math.radians(angle_deg)
     cos_a, sin_a = math.cos(angle), math.sin(angle)
@@ -99,7 +144,7 @@ def rotated_corners(cx, cy, w, h, angle_deg):
     return out
 
 
-def save_obb_sample(img_path: Path, label_path: Path, canvas_size=(960, 720)) -> None:
+def save_obb_sample(img_path: Path, label_path: Path, canvas_size=(960, 720), occlusion_prob: float = 0.45) -> None:
     bg = make_background(canvas_size)
     rank = random.choice(RANKS)
     suit = random.choice(SUITS)
@@ -111,6 +156,7 @@ def save_obb_sample(img_path: Path, label_path: Path, canvas_size=(960, 720)) ->
     cy = random.randint(int(card_h * 0.7), canvas_size[1] - int(card_h * 0.7))
     rotated = card.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
     bg.paste(rotated, (int(cx - rotated.width / 2), int(cy - rotated.height / 2)), rotated)
+    bg = add_occlusions(bg, canvas_size, (cx, cy), card_w, card_h, occlusion_prob)
 
     if random.random() < 0.5:
         bg = bg.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.0, 0.7)))
@@ -123,12 +169,20 @@ def save_obb_sample(img_path: Path, label_path: Path, canvas_size=(960, 720)) ->
     label_path.write_text("0 " + " ".join(f"{v:.6f}" for v in norm) + "\n", encoding="utf-8")
 
 
-def save_corner_sample(path: Path, class_name: str) -> None:
+def save_corner_sample(path: Path, class_name: str, occlusion_prob: float = 0.12) -> None:
     rank, suit = class_name[:-1], class_name[-1]
     card = draw_card(rank, suit, variant=random.randint(0, 1000))
     crop = card.crop((0, 0, 95, 125)).convert("RGB")
     angle = random.uniform(-6, 6)
     crop = crop.rotate(angle, expand=False, fillcolor=(250, 250, 248), resample=Image.Resampling.BICUBIC)
+    if random.random() < occlusion_prob:
+        draw = ImageDraw.Draw(crop)
+        # Keep this mild; fully covered corner labels should be treated as unreadable at runtime.
+        x1 = random.randint(45, 82)
+        y1 = random.randint(5, 95)
+        x2 = min(95, x1 + random.randint(18, 45))
+        y2 = min(125, y1 + random.randint(14, 36))
+        draw.rounded_rectangle((x1, y1, x2, y2), radius=5, fill=random.choice([(35, 35, 35), (190, 190, 180), (70, 90, 65)]))
     if random.random() < 0.4:
         crop = crop.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.0, 0.4)))
     crop.save(path, quality=92)
@@ -140,6 +194,8 @@ def main():
     parser.add_argument("--obb-count", type=int, default=3000)
     parser.add_argument("--corner-count", type=int, default=300, help="images per class")
     parser.add_argument("--val-ratio", type=float, default=0.15)
+    parser.add_argument("--obb-occlusion-prob", type=float, default=0.45)
+    parser.add_argument("--corner-occlusion-prob", type=float, default=0.12)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
 
@@ -160,7 +216,11 @@ def main():
     for split, count in [("train", train_count), ("val", val_count)]:
         for i in range(count):
             stem = f"{split}_{i:06d}"
-            save_obb_sample(obb / "images" / split / f"{stem}.jpg", obb / "labels" / split / f"{stem}.txt")
+            save_obb_sample(
+                obb / "images" / split / f"{stem}.jpg",
+                obb / "labels" / split / f"{stem}.txt",
+                occlusion_prob=args.obb_occlusion_prob,
+            )
 
     for split in ["train", "val"]:
         per_class = args.corner_count if split == "train" else max(20, args.corner_count // 5)
@@ -168,7 +228,11 @@ def main():
             class_dir = cls / split / class_name
             class_dir.mkdir(parents=True, exist_ok=True)
             for i in range(per_class):
-                save_corner_sample(class_dir / f"{class_name}_{i:05d}.jpg", class_name)
+                save_corner_sample(
+                    class_dir / f"{class_name}_{i:05d}.jpg",
+                    class_name,
+                    occlusion_prob=args.corner_occlusion_prob,
+                )
 
     yaml_text = (
         f"path: {obb.as_posix()}\n"
