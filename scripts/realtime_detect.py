@@ -82,17 +82,20 @@ class TemplateCornerRecognizer:
 
 
 class ClassifierRecognizer:
-    def __init__(self, weights: str, imgsz: int = 96):
+    def __init__(self, weights: str, imgsz: int = 96, device: str | None = None):
         self.model = YOLO(weights)
         self.imgsz = imgsz
+        self.device = device
 
     def predict(self, card_bgr: np.ndarray):
         best_label, best_conf = None, -1.0
+        corners = []
         for k in range(4):
             view = np.rot90(card_bgr, k).copy()
             h, w = view.shape[:2]
-            corner = view[: int(h * 0.35), : int(w * 0.38)]
-            result = self.model.predict(corner, imgsz=self.imgsz, verbose=False)[0]
+            corners.append(view[: int(h * 0.35), : int(w * 0.38)])
+        results = self.model.predict(corners, imgsz=self.imgsz, device=self.device, verbose=False)
+        for result in results:
             probs = result.probs
             conf = float(probs.top1conf)
             label = result.names[int(probs.top1)]
@@ -123,11 +126,12 @@ def main():
     parser.add_argument("--source", default="0", help="camera index, video path, or stream URL")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.35)
+    parser.add_argument("--device", default=None, help="optional Ultralytics device, e.g. cpu, 0, cuda:0")
     parser.add_argument("--save", default=None, help="optional output video path")
     args = parser.parse_args()
 
     detector = YOLO(args.detector)
-    recognizer = ClassifierRecognizer(args.classifier) if args.classifier else TemplateCornerRecognizer()
+    recognizer = ClassifierRecognizer(args.classifier, device=args.device) if args.classifier else TemplateCornerRecognizer()
     cap = open_source(args.source)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open source: {args.source}")
@@ -139,7 +143,7 @@ def main():
         ok, frame = cap.read()
         if not ok:
             break
-        result = detector.predict(frame, imgsz=args.imgsz, conf=args.conf, verbose=False)[0]
+        result = detector.predict(frame, imgsz=args.imgsz, conf=args.conf, device=args.device, verbose=False)[0]
         if result.obb is not None and result.obb.xyxyxyxy is not None:
             polys = result.obb.xyxyxyxy.cpu().numpy()
             for pts in polys:

@@ -56,6 +56,14 @@ One-image test:
 python scripts\infer_image.py --detector runs\obb\card_obb_synth\weights\best.pt --classifier runs\classify\corner_cls_synth\weights\best.pt --image data\synthetic\cards_obb\images\val\val_000000.jpg --out runs\demo\val_000000_annotated.jpg
 ```
 
+## Benchmark
+
+```powershell
+python scripts\benchmark_pipeline.py --detector runs\obb\card_obb_synth\weights\best.pt --images data\synthetic\cards_obb\images\val --mode detector --device 0
+python scripts\benchmark_pipeline.py --detector runs\obb\card_obb_synth\weights\best.pt --images data\synthetic\cards_obb\images\val --mode template --device 0
+python scripts\benchmark_pipeline.py --detector runs\obb\card_obb_synth\weights\best.pt --classifier runs\classify\corner_cls_synth\weights\best.pt --images data\synthetic\cards_obb\images\val --mode classifier --device 0
+```
+
 ## Notes
 
 - The synthetic generator outputs rank/suit corner labels as text-like cards. This is enough to prove the pipeline and train a baseline, but not enough for robust casino/cardroom deployment.
