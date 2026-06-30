@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local training/runtime artifacts
+data/
+runs/
+models/
+.ultralytics/
+
+# Model weights and exports
+*.pt
+*.onnx
+*.engine
+*.torchscript
+*.mlpackage
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
