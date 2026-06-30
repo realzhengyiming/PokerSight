@@ -59,5 +59,6 @@ python scripts\infer_image.py --detector runs\obb\card_obb_synth\weights\best.pt
 ## Notes
 
 - The synthetic generator outputs rank/suit corner labels as text-like cards. This is enough to prove the pipeline and train a baseline, but not enough for robust casino/cardroom deployment.
+- Class names use ASCII suit IDs (`S/H/D/C`) for spades/hearts/diamonds/clubs, while generated card images render the actual symbols (`♠/♥/♦/♣`).
 - For arbitrary decorative decks, add real corner crops from those decks to `corners_cls`.
 - For speed, use `yolo11n-obb` and a small classifier first; export to ONNX/TensorRT later if needed.

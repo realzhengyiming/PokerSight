@@ -13,6 +13,7 @@ from ultralytics import YOLO
 RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 SUITS = ["S", "H", "D", "C"]
 CLASSES = [rank + suit for suit in SUITS for rank in RANKS]
+SUIT_SYMBOLS = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 
 
 def order_points(pts: np.ndarray) -> np.ndarray:
@@ -44,7 +45,7 @@ class TemplateCornerRecognizer:
             self.templates.append((class_name, self._render_template(class_name)))
 
     def _font(self, size):
-        for path in ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/calibrib.ttf"]:
+        for path in ["C:/Windows/Fonts/seguisym.ttf", "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/calibrib.ttf"]:
             if Path(path).exists():
                 return ImageFont.truetype(path, size=size)
         return ImageFont.load_default()
@@ -54,7 +55,7 @@ class TemplateCornerRecognizer:
         img = Image.new("L", self.size, 255)
         draw = ImageDraw.Draw(img)
         draw.text((11, 7), rank, font=self._font(40), fill=0)
-        draw.text((13, 55), suit, font=self._font(34), fill=0)
+        draw.text((13, 55), SUIT_SYMBOLS[suit], font=self._font(34), fill=0)
         return self._prep(np.array(img))
 
     def _prep(self, img: np.ndarray) -> np.ndarray:

@@ -12,10 +12,12 @@ RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 SUITS = ["S", "H", "D", "C"]
 RED_SUITS = {"H", "D"}
 CLASSES = [rank + suit for suit in SUITS for rank in RANKS]
+SUIT_SYMBOLS = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 
 
 def find_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     candidates = [
+        Path("C:/Windows/Fonts/seguisym.ttf"),
         Path("C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf"),
         Path("C:/Windows/Fonts/calibrib.ttf" if bold else "C:/Windows/Fonts/calibri.ttf"),
         Path("C:/Windows/Fonts/timesbd.ttf" if bold else "C:/Windows/Fonts/times.ttf"),
@@ -42,6 +44,7 @@ def draw_card(rank: str, suit: str, size=(260, 360), variant: int = 0) -> Image.
     draw.rounded_rectangle((2, 2, w - 3, h - 3), radius=radius, fill=fill, outline=outline, width=3)
 
     color = (190, 20, 35, 255) if suit in RED_SUITS else (15, 15, 20, 255)
+    suit_symbol = SUIT_SYMBOLS[suit]
     rank_font = find_font(random.randint(38, 46), bold=True)
     suit_font = find_font(random.randint(30, 38), bold=True)
     small_font = find_font(22, bold=True)
@@ -49,12 +52,12 @@ def draw_card(rank: str, suit: str, size=(260, 360), variant: int = 0) -> Image.
     x = random.randint(15, 23)
     y = random.randint(12, 18)
     draw.text((x, y), rank, font=rank_font, fill=color)
-    draw.text((x + 2, y + 48), suit, font=suit_font, fill=color)
+    draw.text((x + 2, y + 48), suit_symbol, font=suit_font, fill=color)
 
     rotated = Image.new("RGBA", size, (0, 0, 0, 0))
     rdraw = ImageDraw.Draw(rotated)
     rdraw.text((x, y), rank, font=rank_font, fill=color)
-    rdraw.text((x + 2, y + 48), suit, font=suit_font, fill=color)
+    rdraw.text((x + 2, y + 48), suit_symbol, font=suit_font, fill=color)
     rotated = rotated.rotate(180)
     img.alpha_composite(rotated)
 
@@ -66,10 +69,10 @@ def draw_card(rank: str, suit: str, size=(260, 360), variant: int = 0) -> Image.
             rr = random.randint(8, 22)
             draw.ellipse((cx - rr, cy - rr, cx + rr, cy + rr), outline=color, width=2)
     elif variant % 3 == 1:
-        draw.text((w // 2 - 18, h // 2 - 14), suit, font=find_font(52, bold=True), fill=color)
+        draw.text((w // 2 - 18, h // 2 - 14), suit_symbol, font=find_font(52, bold=True), fill=color)
     else:
         for yy in range(90, h - 80, 40):
-            draw.text((w // 2 - 14, yy), suit, font=small_font, fill=color)
+            draw.text((w // 2 - 14, yy), suit_symbol, font=small_font, fill=color)
 
     if random.random() < 0.35:
         img = img.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.0, 0.5)))
