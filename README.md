@@ -23,10 +23,12 @@ If the YOLO pretrained weights are not cached locally, Ultralytics will try to d
 
 The OBB generator includes partial occlusion augmentation by default. It draws table-like objects such as chips, card backs, shadows, and rails over the card while keeping the full card OBB label, so the first stage learns to localize partly covered cards.
 
+It also creates stacked-card scenes by default. Multiple rotated cards may overlap each other, and every card still gets its own full OBB label. This is intended for cases where a card is slanted and partly covered, but at least one corner index is still readable.
+
 The corner classifier uses only mild occlusion augmentation. If all readable corners are blocked, runtime recognition should return low confidence instead of guessing.
 
 ```bat
-python scripts\generate_synthetic_cards.py --out data\synthetic --obb-occlusion-prob 0.45 --corner-occlusion-prob 0.12
+python scripts\generate_synthetic_cards.py --out data\synthetic --obb-occlusion-prob 0.45 --corner-occlusion-prob 0.12 --stack-prob 0.35 --max-stack-cards 4
 ```
 
 ## Open-source data strategy

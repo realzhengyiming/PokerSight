@@ -144,29 +144,89 @@ def rotated_corners(cx, cy, w, h, angle_deg):
     return out
 
 
-def save_obb_sample(img_path: Path, label_path: Path, canvas_size=(960, 720), occlusion_prob: float = 0.45) -> None:
-    bg = make_background(canvas_size)
+def clamp_center(cx: float, cy: float, card_h: int, canvas_size):
+    margin = int(card_h * 0.72)
+    return (
+        int(max(margin, min(canvas_size[0] - margin, cx))),
+        int(max(margin, min(canvas_size[1] - margin, cy))),
+    )
+
+
+def paste_random_card(bg: Image.Image, canvas_size, cx: int, cy: int, scale: float, angle: float):
     rank = random.choice(RANKS)
     suit = random.choice(SUITS)
-    scale = random.uniform(0.75, 1.2)
     card_w, card_h = int(260 * scale), int(360 * scale)
     card = draw_card(rank, suit, (card_w, card_h), random.randint(0, 1000))
-    angle = random.uniform(-88, 88)
-    cx = random.randint(int(card_h * 0.7), canvas_size[0] - int(card_h * 0.7))
-    cy = random.randint(int(card_h * 0.7), canvas_size[1] - int(card_h * 0.7))
     rotated = card.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
     bg.paste(rotated, (int(cx - rotated.width / 2), int(cy - rotated.height / 2)), rotated)
-    bg = add_occlusions(bg, canvas_size, (cx, cy), card_w, card_h, occlusion_prob)
+    return {
+        "cx": cx,
+        "cy": cy,
+        "w": card_w,
+        "h": card_h,
+        "angle": angle,
+    }
+
+
+def make_label_line(card_info, canvas_size) -> str:
+    pts = rotated_corners(card_info["cx"], card_info["cy"], card_info["w"], card_info["h"], -card_info["angle"])
+    norm = []
+    for x, y in pts:
+        norm.extend([x / canvas_size[0], y / canvas_size[1]])
+    return "0 " + " ".join(f"{v:.6f}" for v in norm)
+
+
+def save_obb_sample(
+    img_path: Path,
+    label_path: Path,
+    canvas_size=(960, 720),
+    occlusion_prob: float = 0.45,
+    stack_prob: float = 0.35,
+    max_stack_cards: int = 4,
+) -> None:
+    bg = make_background(canvas_size)
+    cards = []
+
+    if random.random() < stack_prob:
+        count = random.randint(2, max(2, max_stack_cards))
+        base_scale = random.uniform(0.78, 1.08)
+        base_w, base_h = int(260 * base_scale), int(360 * base_scale)
+        base_cx = random.randint(int(base_h * 0.82), canvas_size[0] - int(base_h * 0.82))
+        base_cy = random.randint(int(base_h * 0.82), canvas_size[1] - int(base_h * 0.82))
+        base_angle = random.uniform(-72, 72)
+        fan_step = random.uniform(7, 18) * random.choice([-1, 1])
+        offset_x = random.uniform(36, 72) * random.choice([-1, 1])
+        offset_y = random.uniform(14, 42) * random.choice([-1, 1])
+        mid = (count - 1) / 2.0
+        for idx in range(count):
+            delta = idx - mid
+            scale = base_scale * random.uniform(0.94, 1.04)
+            card_w, card_h = int(260 * scale), int(360 * scale)
+            cx, cy = clamp_center(
+                base_cx + delta * offset_x + random.uniform(-12, 12),
+                base_cy + delta * offset_y + random.uniform(-10, 10),
+                card_h,
+                canvas_size,
+            )
+            angle = base_angle + delta * fan_step + random.uniform(-5, 5)
+            cards.append(paste_random_card(bg, canvas_size, cx, cy, scale, angle))
+    else:
+        scale = random.uniform(0.75, 1.2)
+        card_h = int(360 * scale)
+        cx = random.randint(int(card_h * 0.7), canvas_size[0] - int(card_h * 0.7))
+        cy = random.randint(int(card_h * 0.7), canvas_size[1] - int(card_h * 0.7))
+        angle = random.uniform(-88, 88)
+        cards.append(paste_random_card(bg, canvas_size, cx, cy, scale, angle))
+
+    if cards:
+        main_card = random.choice(cards)
+        bg = add_occlusions(bg, canvas_size, (main_card["cx"], main_card["cy"]), main_card["w"], main_card["h"], occlusion_prob)
 
     if random.random() < 0.5:
         bg = bg.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.0, 0.7)))
     bg.save(img_path, quality=92)
 
-    pts = rotated_corners(cx, cy, card_w, card_h, -angle)
-    norm = []
-    for x, y in pts:
-        norm.extend([x / canvas_size[0], y / canvas_size[1]])
-    label_path.write_text("0 " + " ".join(f"{v:.6f}" for v in norm) + "\n", encoding="utf-8")
+    label_path.write_text("\n".join(make_label_line(card, canvas_size) for card in cards) + "\n", encoding="utf-8")
 
 
 def save_corner_sample(path: Path, class_name: str, occlusion_prob: float = 0.12) -> None:
@@ -196,6 +256,8 @@ def main():
     parser.add_argument("--val-ratio", type=float, default=0.15)
     parser.add_argument("--obb-occlusion-prob", type=float, default=0.45)
     parser.add_argument("--corner-occlusion-prob", type=float, default=0.12)
+    parser.add_argument("--stack-prob", type=float, default=0.35)
+    parser.add_argument("--max-stack-cards", type=int, default=4)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
 
@@ -220,6 +282,8 @@ def main():
                 obb / "images" / split / f"{stem}.jpg",
                 obb / "labels" / split / f"{stem}.txt",
                 occlusion_prob=args.obb_occlusion_prob,
+                stack_prob=args.stack_prob,
+                max_stack_cards=args.max_stack_cards,
             )
 
     for split in ["train", "val"]:
