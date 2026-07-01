@@ -19,6 +19,12 @@ python scripts\realtime_detect.py --detector runs\obb\card_obb\weights\best.pt -
 
 If the YOLO pretrained weights are not cached locally, Ultralytics will try to download them. Use `--weights path\to\local.pt` in offline environments.
 
+Use `--value-conf` to control whether a readable corner value is recorded. Cards below this confidence are still localized, but shown as `unreadable` and should not be used for counting.
+
+```bat
+python scripts\realtime_detect.py --detector runs\obb\card_obb\weights\best.pt --classifier runs\classify\corner_cls\weights\best.pt --source 0 --value-conf 0.75
+```
+
 ## Synthetic occlusion
 
 The OBB generator includes partial occlusion augmentation by default. It draws table-like objects such as chips, card backs, shadows, and rails over the card while keeping the full card OBB label, so the first stage learns to localize partly covered cards.

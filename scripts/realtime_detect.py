@@ -104,11 +104,17 @@ class ClassifierRecognizer:
         return best_label, best_conf
 
 
-def draw_detection(frame, pts, label, conf):
+def draw_detection(frame, pts, label, conf, readable=True):
     pts_i = pts.astype(np.int32)
-    cv2.polylines(frame, [pts_i], True, (40, 220, 40), 2, cv2.LINE_AA)
+    color = (40, 220, 40) if readable else (150, 150, 150)
+    cv2.polylines(frame, [pts_i], True, color, 2, cv2.LINE_AA)
     x, y = pts_i[:, 0].min(), pts_i[:, 1].min()
-    text = f"{label or 'card'} {conf:.2f}" if label else "card"
+    if readable and label:
+        text = f"{label} {conf:.2f}"
+    elif label:
+        text = f"unreadable {conf:.2f}"
+    else:
+        text = "card"
     cv2.putText(frame, text, (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20, 20, 20), 4, cv2.LINE_AA)
     cv2.putText(frame, text, (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
@@ -126,6 +132,7 @@ def main():
     parser.add_argument("--source", default="0", help="camera index, video path, or stream URL")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.35)
+    parser.add_argument("--value-conf", type=float, default=0.75, help="minimum corner value confidence to record a card")
     parser.add_argument("--device", default=None, help="optional Ultralytics device, e.g. cpu, 0, cuda:0")
     parser.add_argument("--save", default=None, help="optional output video path")
     args = parser.parse_args()
@@ -149,7 +156,8 @@ def main():
             for pts in polys:
                 card = warp_card(frame, pts)
                 label, value_conf = recognizer.predict(card)
-                draw_detection(frame, pts, label, value_conf)
+                readable = bool(label) and value_conf >= args.value_conf
+                draw_detection(frame, pts, label, value_conf, readable=readable)
 
         now = time.time()
         fps = 0.9 * fps + 0.1 * (1.0 / max(now - last, 1e-6))
