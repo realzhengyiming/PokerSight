@@ -21,7 +21,7 @@ def collect_images(path: str, limit: int):
     return images[:limit]
 
 
-def run_pass(detector, recognizer, images, imgsz: int, conf: float, device: str | None, detector_only: bool):
+def run_pass(detector, recognizer, images, imgsz: int, conf: float, iou: float, device: str | None, detector_only: bool):
     frames = 0
     cards = 0
     started = time.perf_counter()
@@ -30,7 +30,7 @@ def run_pass(detector, recognizer, images, imgsz: int, conf: float, device: str 
         if frame is None:
             continue
 
-        result = detector.predict(frame, imgsz=imgsz, conf=conf, device=device, verbose=False)[0]
+        result = detector.predict(frame, imgsz=imgsz, conf=conf, iou=iou, device=device, verbose=False)[0]
         frames += 1
 
         if detector_only or result.obb is None or result.obb.xyxyxyxy is None:
@@ -53,6 +53,7 @@ def main():
     parser.add_argument("--mode", choices=["detector", "template", "classifier"], default="template")
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--iou", type=float, default=0.7)
     parser.add_argument("--device", default=None, help="optional Ultralytics device, e.g. cpu, 0, cuda:0")
     parser.add_argument("--limit", type=int, default=80)
     parser.add_argument("--warmup", type=int, default=5)
@@ -73,9 +74,9 @@ def main():
         recognizer = ClassifierRecognizer(args.classifier, device=args.device)
 
     if args.warmup:
-        run_pass(detector, recognizer, images[: args.warmup], args.imgsz, args.conf, args.device, detector_only)
+        run_pass(detector, recognizer, images[: args.warmup], args.imgsz, args.conf, args.iou, args.device, detector_only)
 
-    frames, cards, elapsed = run_pass(detector, recognizer, images, args.imgsz, args.conf, args.device, detector_only)
+    frames, cards, elapsed = run_pass(detector, recognizer, images, args.imgsz, args.conf, args.iou, args.device, detector_only)
     fps = frames / elapsed if elapsed else 0.0
     cards_per_second = cards / elapsed if elapsed else 0.0
     avg_cards = cards / frames if frames else 0.0

@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--iou", type=float, default=0.7, help="OBB NMS IoU threshold")
     parser.add_argument("--value-conf", type=float, default=0.75)
     parser.add_argument("--device", default=None)
     args = parser.parse_args()
@@ -28,15 +29,15 @@ def main():
 
     detector = YOLO(args.detector)
     recognizer = ClassifierRecognizer(args.classifier, device=args.device) if args.classifier else TemplateCornerRecognizer()
-    result = detector.predict(frame, imgsz=args.imgsz, conf=args.conf, device=args.device, verbose=False)[0]
+    result = detector.predict(frame, imgsz=args.imgsz, conf=args.conf, iou=args.iou, device=args.device, verbose=False)[0]
     detections = 0
     records = 0
     if result.obb is not None and result.obb.xyxyxyxy is not None:
-        for pts in result.obb.xyxyxyxy.cpu().numpy():
+        for idx, pts in enumerate(result.obb.xyxyxyxy.cpu().numpy()):
             card = warp_card(frame, pts)
             label, value_conf = recognizer.predict(card)
             readable = bool(label) and value_conf >= args.value_conf
-            draw_detection(frame, pts, label, value_conf, readable=readable)
+            draw_detection(frame, pts, label, value_conf, readable=readable, index=idx)
             detections += 1
             records += int(readable)
 
