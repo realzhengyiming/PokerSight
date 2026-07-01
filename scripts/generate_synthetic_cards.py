@@ -144,6 +144,70 @@ def rotated_corners(cx, cy, w, h, angle_deg):
     return out
 
 
+def transform_points(cx, cy, w, h, angle_deg, points):
+    angle = math.radians(angle_deg)
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    out = []
+    for x, y in points:
+        out.append((cx + x * cos_a - y * sin_a, cy + x * sin_a + y * cos_a))
+    return out
+
+
+def local_rect_polygon(card_info, left, top, right, bottom):
+    w, h = card_info["w"], card_info["h"]
+    points = [
+        (left - w / 2, top - h / 2),
+        (right - w / 2, top - h / 2),
+        (right - w / 2, bottom - h / 2),
+        (left - w / 2, bottom - h / 2),
+    ]
+    return transform_points(card_info["cx"], card_info["cy"], w, h, -card_info["angle"], points)
+
+
+def mask_polygon(canvas_size, polygon) -> Image.Image:
+    mask = Image.new("L", canvas_size, 0)
+    ImageDraw.Draw(mask).polygon([(int(x), int(y)) for x, y in polygon], fill=255)
+    return mask
+
+
+def card_polygon(card_info):
+    return rotated_corners(card_info["cx"], card_info["cy"], card_info["w"], card_info["h"], -card_info["angle"])
+
+
+def corner_polygons(card_info):
+    w, h = card_info["w"], card_info["h"]
+    corner_w = int(w * 0.42)
+    corner_h = int(h * 0.36)
+    return [
+        local_rect_polygon(card_info, 0, 0, corner_w, corner_h),
+        local_rect_polygon(card_info, w - corner_w, h - corner_h, w, h),
+    ]
+
+
+def visible_fraction(region_mask: Image.Image, cover_mask: Image.Image) -> float:
+    region = np.array(region_mask, dtype=np.uint8) > 0
+    area = int(region.sum())
+    if area == 0:
+        return 0.0
+    covered = np.array(cover_mask, dtype=np.uint8) > 0
+    visible = region & ~covered
+    return float(visible.sum() / area)
+
+
+def stack_has_readable_corners(cards, canvas_size, min_visible_fraction: float = 0.35) -> bool:
+    cover_masks = [mask_polygon(canvas_size, card_polygon(card)) for card in cards]
+    later_cover = Image.new("L", canvas_size, 0)
+    for idx in range(len(cards) - 1, -1, -1):
+        corner_ok = any(
+            visible_fraction(mask_polygon(canvas_size, polygon), later_cover) >= min_visible_fraction
+            for polygon in corner_polygons(cards[idx])
+        )
+        if not corner_ok:
+            return False
+        later_cover = Image.fromarray(np.maximum(np.array(later_cover), np.array(cover_masks[idx])).astype(np.uint8), "L")
+    return True
+
+
 def clamp_center(cx: float, cy: float, card_h: int, canvas_size):
     margin = int(card_h * 0.72)
     return (
@@ -152,20 +216,58 @@ def clamp_center(cx: float, cy: float, card_h: int, canvas_size):
     )
 
 
-def paste_random_card(bg: Image.Image, canvas_size, cx: int, cy: int, scale: float, angle: float):
-    rank = random.choice(RANKS)
-    suit = random.choice(SUITS)
-    card_w, card_h = int(260 * scale), int(360 * scale)
-    card = draw_card(rank, suit, (card_w, card_h), random.randint(0, 1000))
-    rotated = card.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
-    bg.paste(rotated, (int(cx - rotated.width / 2), int(cy - rotated.height / 2)), rotated)
+def make_card_info(cx: int, cy: int, scale: float, angle: float):
     return {
         "cx": cx,
         "cy": cy,
-        "w": card_w,
-        "h": card_h,
+        "w": int(260 * scale),
+        "h": int(360 * scale),
         "angle": angle,
     }
+
+
+def paste_card(bg: Image.Image, card_info):
+    rank = random.choice(RANKS)
+    suit = random.choice(SUITS)
+    card = draw_card(rank, suit, (card_info["w"], card_info["h"]), random.randint(0, 1000))
+    rotated = card.rotate(card_info["angle"], expand=True, resample=Image.Resampling.BICUBIC)
+    cx, cy = card_info["cx"], card_info["cy"]
+    bg.paste(rotated, (int(cx - rotated.width / 2), int(cy - rotated.height / 2)), rotated)
+    return card_info
+
+
+def paste_random_card(bg: Image.Image, canvas_size, cx: int, cy: int, scale: float, angle: float):
+    return paste_card(bg, make_card_info(cx, cy, scale, angle))
+
+
+def generate_stack_cards(canvas_size, max_stack_cards: int, require_readable_corners: bool = True):
+    for _ in range(80):
+        count = random.randint(2, max(2, max_stack_cards))
+        base_scale = random.uniform(0.78, 1.08)
+        base_h = int(360 * base_scale)
+        base_cx = random.randint(int(base_h * 0.82), canvas_size[0] - int(base_h * 0.82))
+        base_cy = random.randint(int(base_h * 0.82), canvas_size[1] - int(base_h * 0.82))
+        base_angle = random.uniform(-72, 72)
+        fan_step = random.uniform(8, 22) * random.choice([-1, 1])
+        offset_x = random.uniform(48, 96) * random.choice([-1, 1])
+        offset_y = random.uniform(22, 62) * random.choice([-1, 1])
+        mid = (count - 1) / 2.0
+        cards = []
+        for idx in range(count):
+            delta = idx - mid
+            scale = base_scale * random.uniform(0.94, 1.04)
+            card_h = int(360 * scale)
+            cx, cy = clamp_center(
+                base_cx + delta * offset_x + random.uniform(-10, 10),
+                base_cy + delta * offset_y + random.uniform(-8, 8),
+                card_h,
+                canvas_size,
+            )
+            angle = base_angle + delta * fan_step + random.uniform(-4, 4)
+            cards.append(make_card_info(cx, cy, scale, angle))
+        if not require_readable_corners or stack_has_readable_corners(cards, canvas_size):
+            return cards
+    return cards
 
 
 def make_label_line(card_info, canvas_size) -> str:
@@ -186,30 +288,13 @@ def save_obb_sample(
 ) -> None:
     bg = make_background(canvas_size)
     cards = []
+    is_stack = False
 
     if random.random() < stack_prob:
-        count = random.randint(2, max(2, max_stack_cards))
-        base_scale = random.uniform(0.78, 1.08)
-        base_w, base_h = int(260 * base_scale), int(360 * base_scale)
-        base_cx = random.randint(int(base_h * 0.82), canvas_size[0] - int(base_h * 0.82))
-        base_cy = random.randint(int(base_h * 0.82), canvas_size[1] - int(base_h * 0.82))
-        base_angle = random.uniform(-72, 72)
-        fan_step = random.uniform(7, 18) * random.choice([-1, 1])
-        offset_x = random.uniform(36, 72) * random.choice([-1, 1])
-        offset_y = random.uniform(14, 42) * random.choice([-1, 1])
-        mid = (count - 1) / 2.0
-        for idx in range(count):
-            delta = idx - mid
-            scale = base_scale * random.uniform(0.94, 1.04)
-            card_w, card_h = int(260 * scale), int(360 * scale)
-            cx, cy = clamp_center(
-                base_cx + delta * offset_x + random.uniform(-12, 12),
-                base_cy + delta * offset_y + random.uniform(-10, 10),
-                card_h,
-                canvas_size,
-            )
-            angle = base_angle + delta * fan_step + random.uniform(-5, 5)
-            cards.append(paste_random_card(bg, canvas_size, cx, cy, scale, angle))
+        is_stack = True
+        cards = generate_stack_cards(canvas_size, max_stack_cards, require_readable_corners=True)
+        for card in cards:
+            paste_card(bg, card)
     else:
         scale = random.uniform(0.75, 1.2)
         card_h = int(360 * scale)
@@ -218,7 +303,7 @@ def save_obb_sample(
         angle = random.uniform(-88, 88)
         cards.append(paste_random_card(bg, canvas_size, cx, cy, scale, angle))
 
-    if cards:
+    if cards and not is_stack:
         main_card = random.choice(cards)
         bg = add_occlusions(bg, canvas_size, (main_card["cx"], main_card["cy"]), main_card["w"], main_card["h"], occlusion_prob)
 
